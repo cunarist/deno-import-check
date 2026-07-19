@@ -50,6 +50,17 @@ export function baseName(path: string): string {
 }
 
 /**
+ * Returns the last segment without its extension, so "mod.ts", "mod.tsx" and
+ * "mod.js" all yield "mod". A leading dot is kept, so ".gitignore" is its own
+ * stem rather than an empty string.
+ */
+export function stemName(path: string): string {
+  const base = baseName(path);
+  const dot = base.lastIndexOf(".");
+  return dot <= 0 ? base : base.slice(0, dot);
+}
+
+/**
  * Resolves a relative specifier such as "../utils/mod.ts"
  * against the directory that contains the importing file.
  * Returns a normalized absolute path.

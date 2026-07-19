@@ -106,6 +106,38 @@ Whatever the importer needs should be re-exported from the entry point, so each
 module keeps exactly one public surface. If you declare no trailing-slash
 mappings at all, this rule never fires.
 
+### `no-relative-bypass`
+
+The same principle for relative paths. A `./` specifier may descend one level at
+most, and only into that folder's entry point.
+
+```ts
+import { helper } from "./helper.ts"; // correct, sibling
+import { thing } from "./sub/mod.ts"; // correct, child entry point
+import { thing } from "./sub/internal.ts"; // error, past the entry point
+import { thing } from "./sub/deep/mod.ts"; // error, two levels down
+```
+
+Together with `no-parent-import` this leaves exactly two ways to reach another
+module: a sibling file, or a `#` entry.
+
+### `enforce-mod-file`
+
+Entry points must be named `mod.ts`, the Deno convention. Both the file name and
+any specifier pointing at an index file are reported.
+
+```ts
+// in ./src/utils/index.ts — error, rename the file to mod.ts
+
+import { thing } from "./sub/index.ts"; // error
+import { thing } from "./sub/mod.ts"; // correct
+import { html } from "npm:lit/index.js"; // fine, not your file
+```
+
+Turning this rule off still leaves `index.ts` recognized as an entry point
+everywhere else, so a project on the Node convention loses nothing but this
+check.
+
 ### `enforce-layer-order`
 
 Treats the order of `#` entries in `deno.json` as the layer order, top layer

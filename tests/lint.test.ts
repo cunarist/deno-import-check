@@ -212,3 +212,80 @@ Deno.test("a file entry owns only itself, not its whole directory", () => {
   assertEquals(found.length, 1);
   assertStringIncludes(found[0].message, `"#utils" must not import`);
 });
+
+Deno.test("no-relative-bypass rejects reaching past a subfolder entry point", () => {
+  const source = `import { internal } from "./components/internal.ts";\n`;
+  const found = lint("src/mod.ts", source, "no-relative-bypass");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, `reaches past the entry point`);
+  assertStringIncludes(found[0].hint ?? "", `"./components/mod.ts"`);
+});
+
+Deno.test("no-relative-bypass rejects descending more than one level", () => {
+  const source = `import { deep } from "./src/components/mod.ts";\n`;
+  const found = lint("mod.ts", source, "no-relative-bypass");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].hint ?? "", `"./src/mod.ts"`);
+});
+
+Deno.test("no-relative-bypass allows a sibling and a child entry point", () => {
+  const source = `import { helper } from "./helper.ts";\n` +
+    `import { components } from "./components/mod.ts";\n` +
+    `import { legacy } from "./components/index.ts";\n`;
+  const found = lint("src/mod.ts", source, "no-relative-bypass");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test("entry points are recognized whatever the extension", () => {
+  const source = `import { a } from "./components/mod.tsx";\n` +
+    `import { b } from "./components/mod.js";\n` +
+    `import { c } from "./components/mod.mts";\n`;
+  const found = lint("src/mod.ts", source, "no-relative-bypass");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test("no-relative-bypass ignores parent and package specifiers", () => {
+  const source = `import { utils } from "../utils/deep/thing.ts";\n` +
+    `import { html } from "npm:lit@3/directives/class-map.js";\n`;
+  const found = lint("src/components/mod.ts", source, "no-relative-bypass");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test("enforce-mod-file rejects a file named index.ts", () => {
+  const source = `export const thing = 1;\n`;
+  const found = lint("src/components/index.ts", source, "enforce-mod-file");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, `must be named "mod.ts"`);
+});
+
+Deno.test("enforce-mod-file catches index files of any extension", () => {
+  const source = `import { a } from "./components/index.jsx";\n` +
+    `import { b } from "./components/index.mts";\n`;
+  const found = lint("src/index.js", source, "enforce-mod-file");
+
+  // Two specifiers plus the file name itself.
+  assertEquals(found.length, 3);
+});
+
+Deno.test("enforce-mod-file rejects specifiers pointing at an index file", () => {
+  const source = `import { a } from "./components/index.ts";\n` +
+    `import { b } from "#components/index.ts";\n`;
+  const found = lint("src/mod.ts", source, "enforce-mod-file");
+
+  assertEquals(found.length, 2);
+  assertStringIncludes(found[0].message, "points at an index file");
+});
+
+Deno.test("enforce-mod-file leaves mod files and packages alone", () => {
+  const source = `import { a } from "./components/mod.ts";\n` +
+    `import { b } from "npm:some-pkg/index.ts";\n`;
+  const found = lint("src/mod.ts", source, "enforce-mod-file");
+
+  assertEquals(found.length, 0);
+});

@@ -36,6 +36,13 @@ Test files follow the same rule. `deno test` only discovers files matching its
 own patterns, so use `<name>.test.ts` — Deno also accepts `<name>_test.ts`, but
 that underscore is the one thing this convention exists to avoid.
 
+A module's entry point is always `mod.ts`, never `index.ts`. The
+`enforce-mod-file` rule enforces this. `index` stays in `BARREL_STEMS` so that
+projects which turn the rule off keep working — do not remove it from there.
+
+Entry point names are matched by stem, so `.ts`, `.tsx`, `.js` and the rest are
+never distinguished. Add extensions to nothing; add stems to `BARREL_STEMS`.
+
 ## The plugin must have zero dependencies
 
 `src/lint.ts` and everything it imports must not import any external package.

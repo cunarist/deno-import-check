@@ -10,13 +10,15 @@
  */
 
 import {
+  BARREL_STEMS,
   findImportsConfig,
   findOwningEntry,
   findPrefixEntry,
   type ImportsConfig,
+  INDEX_STEMS,
   type ModuleEntry,
 } from "./imports.ts";
-import { normalizePath, parentDir, resolveFrom } from "./paths.ts";
+import { normalizePath, parentDir, resolveFrom, stemName } from "./paths.ts";
 
 /**
  * Every AST node that carries a module specifier,
@@ -198,6 +200,78 @@ const enforceLayerOrder: Deno.lint.Rule = {
   },
 };
 
+const enforceModFile: Deno.lint.Rule = {
+  create(ctx) {
+    const specifiers = visitSpecifiers((node, specifier) => {
+      // Only paths this project controls. A package may ship whatever
+      // file names it likes.
+      if (!specifier.startsWith(".") && !specifier.startsWith("#")) {
+        return;
+      }
+      if (!INDEX_STEMS.includes(stemName(specifier))) {
+        return;
+      }
+      ctx.report({
+        node,
+        message: `"${specifier}" points at an index file.`,
+        hint:
+          'Module entry points are named "mod.ts" here. Rename the target and update this specifier.',
+      });
+    });
+
+    return {
+      ...specifiers,
+      Program(node) {
+        if (!INDEX_STEMS.includes(stemName(normalizePath(ctx.filename)))) {
+          return;
+        }
+        ctx.report({
+          node,
+          message: 'A module entry point must be named "mod.ts".',
+          hint:
+            'Deno projects use "mod.ts" rather than the Node convention. One name everywhere means a module\'s entry point is never ambiguous.',
+        });
+      },
+    };
+  },
+};
+
+const noRelativeBypass: Deno.lint.Rule = {
+  create(ctx) {
+    return visitSpecifiers((node, specifier) => {
+      // Parent imports belong to "no-parent-import", and bare or "#"
+      // specifiers never walk the file tree.
+      if (!specifier.startsWith("./")) {
+        return;
+      }
+
+      const segments = specifier.slice(2).split("/").filter(
+        (segment) => segment !== "" && segment !== ".",
+      );
+      // A single segment is a sibling file, which is always fine.
+      if (segments.length < 2) {
+        return;
+      }
+      if (
+        segments.length === 2 && BARREL_STEMS.includes(stemName(segments[1]))
+      ) {
+        return;
+      }
+
+      ctx.report({
+        node,
+        message: `"${specifier}" reaches past the entry point of "./${
+          segments[0]
+        }".`,
+        hint:
+          `A relative import may descend one level at most, into that folder's entry point. Import "./${
+            segments[0]
+          }/mod.ts" and re-export whatever this file needs from there.`,
+      });
+    });
+  },
+};
+
 /**
  * Lint rules that keep a Deno module graph acyclic and layered,
  * complementing the circular dependency CLI in this package.
@@ -217,6 +291,8 @@ const plugin: Deno.lint.Plugin = {
   rules: {
     "no-parent-import": noParentImport,
     "no-barrel-bypass": noBarrelBypass,
+    "no-relative-bypass": noRelativeBypass,
+    "enforce-mod-file": enforceModFile,
     "enforce-layer-order": enforceLayerOrder,
   },
 };

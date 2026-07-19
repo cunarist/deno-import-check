@@ -1,13 +1,23 @@
 import {
-  baseName,
   isInsideDir,
   normalizePath,
   parentDir,
   resolveFrom,
+  stemName,
 } from "./paths.ts";
 
-/** File names that mark a directory's public entry point. */
-const BARREL_NAMES = ["mod.ts", "mod.tsx", "index.ts", "index.tsx"];
+/**
+ * File name stems that mark a directory's public entry point. Compared
+ * without the extension so ".ts", ".tsx", ".js" and friends all count.
+ */
+export const BARREL_STEMS = ["mod", "index"];
+
+/**
+ * Barrel stems the `enforce-mod-file` rule rejects. They stay in
+ * {@linkcode BARREL_STEMS} so a project that turns that rule off still has
+ * its entry points recognized.
+ */
+export const INDEX_STEMS = ["index"];
 
 /** Config file names searched for, in priority order. */
 const CONFIG_NAMES = ["deno.json", "deno.jsonc"];
@@ -224,7 +234,7 @@ function readConfig(
       continue;
     }
 
-    const isBarrel = BARREL_NAMES.includes(baseName(target));
+    const isBarrel = BARREL_STEMS.includes(stemName(target));
     const entry: ModuleEntry = {
       specifier,
       target,
