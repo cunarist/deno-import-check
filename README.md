@@ -138,6 +138,34 @@ Turning this rule off still leaves `index.ts` recognized as an entry point
 everywhere else, so a project on the Node convention loses nothing but this
 check.
 
+### `enforce-import-order`
+
+Imports go in three groups separated by a blank line, each sorted
+alphabetically: packages, then `#` aliases, then relative paths.
+
+```ts
+import { assertEquals } from "@std/assert";
+import { z } from "npm:zod";
+
+import { Button } from "#components";
+import { format } from "#utils";
+
+import { helper } from "./helper.ts";
+```
+
+The groups run from most distant to most local, so the shape of a file's
+dependencies is visible before reading a single statement. Anything that is
+neither a `#` alias nor a path counts as a package, which covers bare names,
+`jsr:`, `npm:`, `node:` and remote URLs alike.
+
+**Automatically fixable**, except when the fix would lose something: a comment
+between imports has no place in the rewritten block, and statements interleaved
+between imports would be erased by the rewrite. Both cases report without a fix.
+
+Sorting is by code point, not locale. Locale collation quietly ignores
+punctuation, which puts `#utils` and `@std/assert` in an order that depends on
+the ICU version rather than on anything visible in the file.
+
 ### `enforce-layer-order`
 
 Treats the order of `#` entries in `deno.json` as the layer order, top layer

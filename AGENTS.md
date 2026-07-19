@@ -43,6 +43,16 @@ projects which turn the rule off keep working — do not remove it from there.
 Entry point names are matched by stem, so `.ts`, `.tsx`, `.js` and the rest are
 never distinguished. Add extensions to nothing; add stems to `BARREL_STEMS`.
 
+## Import order
+
+Packages, then `#` aliases, then relative paths, each group separated by a
+blank line and sorted by code point. `enforce-import-order` enforces this and
+fixes it with `deno lint --fix`.
+
+Do not add a third-party import sorter alongside it. `@ayk/lint-import-order`
+was removed for this reason: it classifies `#` specifiers as external packages,
+so the two plugins fight over the same lines and each undoes the other's fix.
+
 ## The plugin must have zero dependencies
 
 `src/lint.ts` and everything it imports must not import any external package.

@@ -272,6 +272,150 @@ const noRelativeBypass: Deno.lint.Rule = {
   },
 };
 
+/** The three import groups, in the order they must appear. */
+const IMPORT_GROUPS = ["package", '"#" alias', "relative"];
+
+/**
+ * Classifies a specifier into its {@linkcode IMPORT_GROUPS} index. Anything
+ * that is neither a `#` alias nor a path is a package, which covers bare
+ * names, `jsr:`, `npm:`, `node:` and remote URLs alike.
+ */
+function importGroup(specifier: string): number {
+  if (specifier.startsWith("#")) {
+    return 1;
+  }
+  if (specifier.startsWith(".") || specifier.startsWith("/")) {
+    return 2;
+  }
+  return 0;
+}
+
+/**
+ * Orders specifiers by code point rather than locale, so the result does not
+ * depend on collation rules that quietly ignore punctuation.
+ */
+function compareSpecifiers(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+const enforceImportOrder: Deno.lint.Rule = {
+  create(ctx) {
+    return {
+      "Program:exit"(program) {
+        const body = program.body;
+        const imports = body.filter((statement) =>
+          statement.type === "ImportDeclaration"
+        ) as Deno.lint.ImportDeclaration[];
+        if (imports.length < 2) {
+          return;
+        }
+
+        const text = ctx.sourceCode.text;
+        const entries = imports.map((node) => ({
+          node,
+          specifier: node.source.value as string,
+          group: importGroup(node.source.value as string),
+        }));
+
+        for (let i = 1; i < entries.length; i += 1) {
+          const previous = entries[i - 1];
+          const current = entries[i];
+          const between = text.slice(
+            previous.node.range[1],
+            current.node.range[0],
+          );
+          const blankLine = (between.match(/\n/g) ?? []).length >= 2;
+
+          let problem: string | null = null;
+          if (current.group < previous.group) {
+            problem =
+              `${IMPORT_GROUPS[current.group]} imports must come before ${
+                IMPORT_GROUPS[previous.group]
+              } imports.`;
+          } else if (current.group > previous.group && !blankLine) {
+            problem = `A blank line must separate ${
+              IMPORT_GROUPS[previous.group]
+            } imports from ${IMPORT_GROUPS[current.group]} imports.`;
+          } else if (current.group === previous.group && blankLine) {
+            problem = `${
+              IMPORT_GROUPS[current.group]
+            } imports must not be split by a blank line.`;
+          } else if (
+            current.group === previous.group &&
+            compareSpecifiers(current.specifier, previous.specifier) < 0
+          ) {
+            problem =
+              `"${current.specifier}" must come before "${previous.specifier}".`;
+          }
+
+          if (problem === null) {
+            continue;
+          }
+
+          ctx.report({
+            node: current.node,
+            message: problem,
+            hint:
+              "Imports go in three groups separated by a blank line: packages, then \"#\" aliases, then relative paths. Each group is sorted alphabetically.",
+            ...fixImportBlock(ctx, body, entries),
+          });
+          return;
+        }
+      },
+    };
+  },
+};
+
+/**
+ * Builds the whole-block rewrite for {@linkcode enforceImportOrder}, but only
+ * when nothing would be lost. Comments inside the block have no home in the
+ * rewritten text, and statements interleaved between imports would be erased
+ * by a single range replacement, so both cases report without a fix.
+ */
+function fixImportBlock(
+  ctx: Deno.lint.RuleContext,
+  body: Deno.lint.Statement[],
+  entries: { node: Deno.lint.ImportDeclaration; specifier: string }[],
+): { fix?: (fixer: Deno.lint.Fixer) => Deno.lint.Fix } {
+  const first = entries[0].node;
+  const last = entries[entries.length - 1].node;
+  const start = first.range[0];
+  const end = last.range[1];
+
+  const contiguous = body.indexOf(last) - body.indexOf(first) + 1 ===
+    entries.length;
+  if (!contiguous) {
+    return {};
+  }
+
+  const commented = ctx.sourceCode.getAllComments().some((comment) =>
+    comment.range[0] >= start && comment.range[1] <= end
+  );
+  if (commented) {
+    return {};
+  }
+
+  const sorted = [...entries].sort((a, b) =>
+    importGroup(a.specifier) - importGroup(b.specifier) ||
+    compareSpecifiers(a.specifier, b.specifier)
+  );
+
+  let replacement = "";
+  let previousGroup: number | null = null;
+  for (const entry of sorted) {
+    const group = importGroup(entry.specifier);
+    if (previousGroup !== null) {
+      replacement += group === previousGroup ? "\n" : "\n\n";
+    }
+    replacement += ctx.sourceCode.getText(entry.node);
+    previousGroup = group;
+  }
+
+  return {
+    fix: (fixer) => fixer.replaceTextRange([start, end], replacement),
+  };
+}
+
 /**
  * Lint rules that keep a Deno module graph acyclic and layered,
  * complementing the circular dependency CLI in this package.
@@ -293,6 +437,7 @@ const plugin: Deno.lint.Plugin = {
     "no-barrel-bypass": noBarrelBypass,
     "no-relative-bypass": noRelativeBypass,
     "enforce-mod-file": enforceModFile,
+    "enforce-import-order": enforceImportOrder,
     "enforce-layer-order": enforceLayerOrder,
   },
 };

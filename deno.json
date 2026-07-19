@@ -18,7 +18,6 @@
     "exclude": ["tests/fixture"],
     "plugins": [
       "jsr:@hugoalh/deno-lint-rules@0.8.3/recommended",
-      "jsr:@ayk/lint-import-order@0.1.0",
       "./src/lint.ts"
     ],
     "rules": {

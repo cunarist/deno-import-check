@@ -1,4 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
+
 import { parseConfigText } from "#imports";
 import plugin from "#lint";
 import { normalizePath, parentDir } from "#paths";
@@ -288,4 +289,74 @@ Deno.test("enforce-mod-file leaves mod files and packages alone", () => {
   const found = lint("src/mod.ts", source, "enforce-mod-file");
 
   assertEquals(found.length, 0);
+});
+
+Deno.test("enforce-import-order requires blank lines between groups", () => {
+  const source = `import { a } from "npm:zod";\n` +
+    `import { b } from "#components";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, "A blank line must separate");
+});
+
+Deno.test("enforce-import-order rejects a group out of place", () => {
+  const source = `import { b } from "./helper.ts";\n\n` +
+    `import { a } from "npm:zod";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, "package imports must come before");
+});
+
+Deno.test("enforce-import-order rejects a blank line inside a group", () => {
+  const source = `import { a } from "#app-store";\n\n` +
+    `import { b } from "#components";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, "must not be split by a blank line");
+});
+
+Deno.test("enforce-import-order sorts within a group by code point", () => {
+  const source = `import { b } from "#components";\n` +
+    `import { a } from "#app-store";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, `"#app-store" must come before`);
+});
+
+Deno.test("enforce-import-order accepts and rewrites a full three-group block", () => {
+  const source = `import { c } from "./helper.ts";\n` +
+    `import { b } from "#components";\n` +
+    `import { a } from "npm:zod";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(
+    applyFixes(source, found),
+    `import { a } from "npm:zod";\n\n` +
+      `import { b } from "#components";\n\n` +
+      `import { c } from "./helper.ts";\n`,
+  );
+});
+
+Deno.test("enforce-import-order leaves a correct block alone", () => {
+  const source = `import { a } from "@std/assert";\n` +
+    `import { z } from "npm:zod";\n\n` +
+    `import { b } from "#components";\n\n` +
+    `import { c } from "./helper.ts";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test("enforce-import-order reports without a fix when comments would be lost", () => {
+  const source = `import { b } from "#components";\n` +
+    `// Why this import exists.\n` +
+    `import { a } from "#app-store";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertEquals(found[0].fix ?? [], []);
 });
