@@ -23,7 +23,6 @@
     ],
     "rules": {
       "tags": ["recommended", "jsr"],
-      "exclude": ["no-slow-types"],
       "include": [
         "eqeqeq",
         "camelcase",
