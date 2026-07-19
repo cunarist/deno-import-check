@@ -1,3 +1,13 @@
+/**
+ * A CLI that finds circular dependencies in a Deno module graph.
+ *
+ * It reads `deno info --json` for the entrypoint you pass, walks the graph
+ * depth first, and prints every cycle it finds as a path. Only local modules
+ * are traversed, so remote and JSR dependencies are ignored. The process exits
+ * with code 0 when the graph is acyclic and 1 when it is not, which makes it
+ * usable directly in CI or a pre-commit hook.
+ */
+
 import { normalizePath, toRelativePath } from "./paths.ts";
 
 interface Dependency {

@@ -1,3 +1,12 @@
+/**
+ * A `deno lint` plugin whose rules keep a module graph acyclic and layered.
+ *
+ * A lint plugin only ever sees one file's syntax tree, so it cannot follow
+ * imports and cannot detect a cycle on its own. Instead these rules forbid the
+ * import patterns that create cycles in the first place, reporting them in the
+ * editor.
+ */
+
 import {
   findImportsConfig,
   findOwningEntry,
