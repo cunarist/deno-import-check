@@ -95,7 +95,7 @@ Deno.test("no-barrel-bypass allows the exact module specifier", () => {
   assertEquals(found.length, 0);
 });
 
-Deno.test("enforce-layer-order rejects importing a later module", () => {
+Deno.test("enforce-layer-order rejects importing an earlier module", () => {
   const source = `import { components } from "#components";\n`;
   const found = lint("src/utils/mod.ts", source, "enforce-layer-order");
 
@@ -106,7 +106,7 @@ Deno.test("enforce-layer-order rejects importing a later module", () => {
   );
 });
 
-Deno.test("enforce-layer-order allows importing an earlier module", () => {
+Deno.test("enforce-layer-order allows importing a later module", () => {
   const source = `import { utils } from "#utils";\n` +
     `import type { Thing } from "#types";\n`;
   const found = lint("src/components/mod.ts", source, "enforce-layer-order");

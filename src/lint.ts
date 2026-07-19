@@ -185,13 +185,13 @@ const enforceLayerOrder: Deno.lint.Rule = {
         return;
       }
 
-      if (target.index > owner.index) {
+      if (target.index < owner.index) {
         ctx.report({
           node,
           message:
-            `"${owner.specifier}" must not import "${target.specifier}", which is declared after it in deno.json.`,
+            `"${owner.specifier}" must not import "${target.specifier}", which is declared above it in deno.json.`,
           hint:
-            `A module may only import modules declared before it. Either move "${target.specifier}" above "${owner.specifier}" in the deno.json imports, or move the shared code down into a lower module.`,
+            `A module may only import modules declared below it. Either move "${target.specifier}" below "${owner.specifier}" in the deno.json imports, or move the shared code into a module declared below both.`,
         });
       }
     });

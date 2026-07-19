@@ -60,11 +60,11 @@ return `null`, and all three rules would silently stop reporting anything. The
 
 The `#`-prefixed entries of the `imports` map in `deno.json` are the single
 source of truth for module structure. Their **declaration order is the layer
-order**: a module may only import modules declared before it. Order the map
-bottom-up so it doubles as documentation.
+order**, top layer first: a module may only import modules declared below it.
+Order the map top-down so it doubles as documentation.
 
-This repo dogfoods its own plugin, so `deno.json` lists `#paths`, `#imports`,
-`#lint`, and `#mod` in dependency order, and `deno lint` runs the rules in
+This repo dogfoods its own plugin, so `deno.json` lists `#lint`, `#imports`,
+and `#paths` in dependency order, and `deno lint` runs the rules in
 `src/lint.ts` against this codebase.
 
 ## ASCII only

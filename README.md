@@ -64,9 +64,9 @@ declaration order — how they are layered.
 ```json
 {
   "imports": {
+    "#components": "./src/components/mod.ts",
     "#utils": "./src/utils/mod.ts",
-    "#types": "./src/types/mod.ts",
-    "#components": "./src/components/mod.ts"
+    "#types": "./src/types/mod.ts"
   }
 }
 ```
@@ -83,8 +83,8 @@ usually start.
 
 ```ts
 import { utils } from "../utils/mod.ts"; // error
-import { utils } from "#utils"; //           correct
-import { helper } from "./helper.ts"; //     correct, same folder
+import { utils } from "#utils"; // correct
+import { helper } from "./helper.ts"; // correct, same folder
 ```
 
 **Automatically fixable.** When the resolved path matches a declared entry, the
@@ -99,7 +99,7 @@ as `"#components/": "./src/components/"`.
 
 ```ts
 import { thing } from "#components/internal.ts"; // error
-import { thing } from "#components"; //             correct
+import { thing } from "#components"; // correct
 ```
 
 Whatever the importer needs should be re-exported from the entry point, so each
@@ -108,22 +108,35 @@ mappings at all, this rule never fires.
 
 ### `enforce-layer-order`
 
-Treats the declaration order of `#` entries as the layer order: **a module may
-only import modules declared before it.** Given the config above, `#components`
-may import `#utils` and `#types`, but `#utils` may not import `#components`.
+Treats the order of `#` entries in `deno.json` as the layer order, top layer
+first: **a module may only import modules declared below it.**
 
 ```ts
+// in ./src/components/mod.ts — declared first, so everything is below it
+import { format } from "#utils"; // correct
+import type { User } from "#types"; // correct
+
 // in ./src/utils/mod.ts
-import { components } from "#components"; // error, declared later
+import type { User } from "#types"; // correct, declared below
+import { Button } from "#components"; // error, declared above
 ```
 
+To fix a violation, either reorder the two entries or move the shared code into
+a module further down.
+
 A module importing its own entry point is flagged too, since that is a cycle
-waiting to happen — use a same-folder relative import instead.
+waiting to happen — use a same-folder relative import instead:
+
+```ts
+// in ./src/utils/format.ts
+import { helper } from "#utils"; // error, importing its own module
+import { helper } from "./helper.ts"; // correct
+```
 
 This makes cycles between modules structurally impossible rather than merely
 detectable, which is why it pairs with the CLI instead of duplicating it. The
 ordering is deliberately implicit in the config so there is nothing extra to
-keep in sync; ordering the `imports` map bottom-up doubles as documentation.
+keep in sync; ordering the `imports` map top-down doubles as documentation.
 
 ## License
 
