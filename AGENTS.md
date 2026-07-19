@@ -1,7 +1,7 @@
 # Agent Notes
 
-`@cunarist/deno-dependency-check` keeps a Deno module graph acyclic and layered.
-It ships two surfaces from one package:
+`@cunarist/deno-dependency-check` keeps a Deno module graph free of cycles and
+clearly layered. It ships two surfaces from one package:
 
 - **CLI** (`src/mod.ts`, the `.` export) resolves the whole module graph through
   `deno info --json` and reports cycles.
@@ -45,9 +45,9 @@ never distinguished. Add extensions to nothing; add stems to `BARREL_STEMS`.
 
 ## Import order
 
-Packages, then `#` aliases, then relative paths, each group separated by a
-blank line and sorted by code point. `enforce-import-order` enforces this and
-fixes it with `deno lint --fix`.
+Packages, then `#` aliases, then relative paths, each group separated by a blank
+line and sorted by code point. `enforce-import-order` enforces this and fixes it
+with `deno lint --fix`.
 
 Do not add a third-party import sorter alongside it. `@ayk/lint-import-order`
 was removed for this reason: it classifies `#` specifiers as external packages,
@@ -80,9 +80,9 @@ source of truth for module structure. Their **declaration order is the layer
 order**, top layer first: a module may only import modules declared below it.
 Order the map top-down so it doubles as documentation.
 
-This repo dogfoods its own plugin, so `deno.json` lists `#lint`, `#imports`,
-and `#paths` in dependency order, and `deno lint` runs the rules in
-`src/lint.ts` against this codebase.
+This repo dogfoods its own plugin, so `deno.json` lists `#lint`, `#imports`, and
+`#paths` in dependency order, and `deno lint` runs the rules in `src/lint.ts`
+against this codebase.
 
 ## ASCII only
 
@@ -95,3 +95,14 @@ be written as escapes: `"\u{1f4e6}"`, not the literal emoji. This applies to
 JSR has no rename operation. The package was renamed from
 `@cunarist/deno-circular-deps`, which stays frozen at 0.2.1. Version bumps are
 manual edits to `deno.json` followed by `deno publish`.
+
+## Unused alias detection lives in the CLI
+
+A lint rule sees one file at a time, so it can never conclude that nothing
+imports a given `#` entry. The CLI does it instead, by comparing the entries in
+`deno.json` against the raw specifiers `deno info --json` reports for the whole
+graph.
+
+This is why the CLI takes many entry points rather than one. Pass every root a
+project has, or aliases used only by files outside the graph get reported as
+unused.

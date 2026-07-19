@@ -1,5 +1,6 @@
 /**
- * A `deno lint` plugin whose rules keep a module graph acyclic and layered.
+ * A `deno lint` plugin whose rules keep a module graph free of cycles and
+ * clearly layered.
  *
  * A lint plugin only ever sees one file's syntax tree, so it cannot follow
  * imports and cannot detect a cycle on its own. Instead these rules forbid the
@@ -158,29 +159,55 @@ const noBarrelBypass: Deno.lint.Rule = {
   },
 };
 
+/**
+ * The module a specifier points at, whether it was written as a `#` alias or
+ * as a path. Resolving both means the layer rules cannot be sidestepped by
+ * spelling the same target a different way. Returns `null` for specifiers
+ * that leave the project, such as `jsr:` and `npm:`.
+ */
+function resolveTarget(
+  ctx: Deno.lint.RuleContext,
+  config: ImportsConfig,
+  specifier: string,
+): ModuleEntry | null {
+  if (specifier.startsWith("#")) {
+    return targetModule(config, specifier);
+  }
+  if (!specifier.startsWith(".")) {
+    return null;
+  }
+  const resolved = resolveFrom(
+    parentDir(normalizePath(ctx.filename)),
+    specifier,
+  );
+  return config.byTarget.get(resolved) ?? null;
+}
+
 const enforceLayerOrder: Deno.lint.Rule = {
   create(ctx) {
     return visitSpecifiers((node, specifier) => {
-      if (!specifier.startsWith("#")) {
-        return;
-      }
-
       const config = findImportsConfig(ctx.filename);
       if (config === null) {
         return;
       }
 
       const owner = findOwningEntry(config, ctx.filename);
-      const target = targetModule(config, specifier);
+      const target = resolveTarget(ctx, config, specifier);
       if (owner === null || target === null) {
         return;
       }
 
       if (target.index === owner.index) {
+        // A relative specifier is already the recommended fix for the "#"
+        // form, so it needs the opposite advice: reach for the sibling
+        // rather than for the barrel that re-exports it.
+        const advice = specifier.startsWith("#")
+          ? "Use a same-folder relative import instead."
+          : "Import the sibling file directly instead.";
         ctx.report({
           node,
           message:
-            `"${owner.specifier}" must not import itself. Use a same-folder relative import instead.`,
+            `"${owner.specifier}" must not import its own entry point. ${advice}`,
           hint:
             "Importing your own entry point from inside the module is a circular import waiting to happen.",
         });
@@ -272,6 +299,54 @@ const noRelativeBypass: Deno.lint.Rule = {
   },
 };
 
+const preferAliasImport: Deno.lint.Rule = {
+  create(ctx) {
+    return visitSpecifiers((node, specifier) => {
+      // Parent specifiers are banned outright by "no-parent-import", which
+      // already offers this same rewrite.
+      if (!specifier.startsWith("./")) {
+        return;
+      }
+
+      const config = findImportsConfig(ctx.filename);
+      if (config === null) {
+        return;
+      }
+
+      const here = parentDir(normalizePath(ctx.filename));
+      const resolved = resolveFrom(here, specifier);
+      // A same-folder sibling is the form every other rule recommends, and
+      // a plugin published for local loading cannot use aliases at all,
+      // since those resolve against the consuming project's import map.
+      if (parentDir(resolved) === here) {
+        return;
+      }
+
+      const entry = config.byTarget.get(resolved);
+      if (entry === undefined) {
+        return;
+      }
+
+      // Reaching your own entry point is never fixed by switching to the
+      // alias, so "enforce-layer-order" owns that case alone.
+      if (findOwningEntry(config, ctx.filename)?.index === entry.index) {
+        return;
+      }
+
+      ctx.report({
+        node,
+        message:
+          `"${resolved}" is declared as "${entry.specifier}". Use the alias instead.`,
+        hint:
+          "One spelling per module keeps the deno.json imports the single source of truth, and keeps the layer rules from being sidestepped by a path.",
+        fix(fixer) {
+          return fixer.replaceText(node, quoteLike(node, entry.specifier));
+        },
+      });
+    });
+  },
+};
+
 /** The three import groups, in the order they must appear. */
 const IMPORT_GROUPS = ["package", '"#" alias', "relative"];
 
@@ -356,7 +431,7 @@ const enforceImportOrder: Deno.lint.Rule = {
               node: members[i],
               message: `"${name}" must come before "${previousName}".`,
               hint:
-                "Imported names are sorted alphabetically, ignoring case and any \"type\" modifier.",
+                'Imported names are sorted alphabetically, ignoring case and any "type" modifier.',
               ...fixMemberOrder(ctx, members),
             });
             return;
@@ -385,10 +460,11 @@ const enforceImportOrder: Deno.lint.Rule = {
 
           let problem: string | null = null;
           if (current.group < previous.group) {
-            problem =
-              `${IMPORT_GROUPS[current.group]} imports must come before ${
-                IMPORT_GROUPS[previous.group]
-              } imports.`;
+            problem = `${
+              IMPORT_GROUPS[current.group]
+            } imports must come before ${
+              IMPORT_GROUPS[previous.group]
+            } imports.`;
           } else if (current.group > previous.group && !blankLine) {
             problem = `A blank line must separate ${
               IMPORT_GROUPS[previous.group]
@@ -413,7 +489,7 @@ const enforceImportOrder: Deno.lint.Rule = {
             node: current.node,
             message: problem,
             hint:
-              "Imports go in three groups separated by a blank line: packages, then \"#\" aliases, then relative paths. Each group is sorted alphabetically.",
+              'Imports go in three groups separated by a blank line: packages, then "#" aliases, then relative paths. Each group is sorted alphabetically.',
             ...fixImportBlock(ctx, body, entries),
           });
           return;
@@ -511,7 +587,7 @@ function fixImportBlock(
 }
 
 /**
- * Lint rules that keep a Deno module graph acyclic and layered,
+ * Lint rules that keep a Deno module graph free of cycles and clearly layered,
  * complementing the circular dependency CLI in this package.
  *
  * Enable it in `deno.json`:
@@ -528,6 +604,7 @@ const plugin: Deno.lint.Plugin = {
   name: "dependency-check",
   rules: {
     "no-parent-import": noParentImport,
+    "prefer-alias-import": preferAliasImport,
     "no-barrel-bypass": noBarrelBypass,
     "no-relative-bypass": noRelativeBypass,
     "enforce-mod-file": enforceModFile,

@@ -124,7 +124,7 @@ Deno.test("enforce-layer-order rejects a module importing its own entry point", 
   );
 
   assertEquals(found.length, 1);
-  assertStringIncludes(found[0].message, "must not import itself");
+  assertStringIncludes(found[0].message, "must not import its own entry point");
 });
 
 Deno.test("enforce-layer-order treats a deep specifier as its owning module", () => {
@@ -408,4 +408,78 @@ Deno.test("enforce-import-order accepts sorted names", () => {
   const found = lint("src/mod.ts", source, "enforce-import-order");
 
   assertEquals(found.length, 0);
+});
+
+Deno.test("enforce-layer-order catches a relative import of the own entry point", () => {
+  const source = `import { x } from "./mod.ts";\n`;
+  const found = lint(
+    "src/components/internal.ts",
+    source,
+    "enforce-layer-order",
+  );
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, "must not import its own entry point");
+  assertStringIncludes(found[0].message, "Import the sibling file directly");
+});
+
+Deno.test("prefer-alias-import rewrites a path that has an alias", () => {
+  const source = `import { c } from "./components/mod.ts";\n`;
+  const found = lint("src/mod.ts", source, "prefer-alias-import");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, `declared as "#components"`);
+  assertEquals(
+    applyFixes(source, found),
+    `import { c } from "#components";\n`,
+  );
+});
+
+Deno.test("prefer-alias-import leaves same-folder siblings alone", () => {
+  // Every other rule recommends this form, and a lint plugin loaded by path
+  // cannot use aliases at all.
+  const source = `import { s } from "./app-store.ts";\n`;
+  const found = lint("src/mod.ts", source, "prefer-alias-import");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test("prefer-alias-import ignores paths with no declared entry", () => {
+  const source = `import { u } from "./unmapped/mod.ts";\n`;
+  const found = lint("src/mod.ts", source, "prefer-alias-import");
+
+  assertEquals(found.length, 0);
+});
+
+Deno.test('the CLI reports unused "#" imports', async () => {
+  // End to end on purpose: the entry point is passed the way a user types it,
+  // as a relative path, which is what the config lookup has to cope with.
+  const dir = normalizePath(Deno.makeTempDirSync());
+  Deno.writeTextFileSync(
+    `${dir}/deno.json`,
+    `{ "imports": { "#used": "./used.ts", "#unused": "./unused.ts" } }\n`,
+  );
+  Deno.writeTextFileSync(`${dir}/used.ts`, `export const a = 1;\n`);
+  Deno.writeTextFileSync(`${dir}/unused.ts`, `export const b = 2;\n`);
+  Deno.writeTextFileSync(
+    `${dir}/main.ts`,
+    `import { a } from "#used";\n\nexport const c = a;\n`,
+  );
+
+  const cli = parentDir(parentDir(normalizePath(import.meta.url))) +
+    "/src/mod.ts";
+  const { code, stdout } = await new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", cli, "main.ts"],
+    cwd: dir,
+    stdout: "piped",
+    stderr: "piped",
+  }).output();
+  const output = new TextDecoder().decode(stdout);
+
+  assertEquals(code, 1);
+  assertStringIncludes(output, `1 unused "#" internal import alias`);
+  assertStringIncludes(output, "#unused");
+  assertEquals(output.includes("#used\u{1b}"), false);
+
+  Deno.removeSync(dir, { recursive: true });
 });

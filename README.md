@@ -1,6 +1,6 @@
 # Deno Dependency Check
 
-Keep a Deno module graph acyclic and layered.
+Keep a Deno module graph free of cycles and clearly layered.
 
 This package ships two complementary halves:
 
@@ -17,27 +17,34 @@ the import patterns that create cycles in the first place, right in the editor.
 ## CLI
 
 ```shell
-deno run -A jsr:@cunarist/deno-dependency-check somefile.ts
+deno run -A jsr:@cunarist/deno-dependency-check somefile.ts someotherfile.ts
 ```
+
+Pass every entry point your project has. They are merged into one graph, so a
+module reachable from the tests but not from the app still counts as reached —
+which matters for the unused alias check below.
 
 The process exits with code 0 on success and 1 on failure, so it drops straight
 into CI or a pre-commit hook.
 
-✅ **No circular dependencies:**
+✅ **No dependency graph problems:**
 
 ```
 📦 2 modules
 📁 2 local modules
 ✅ No circular dependencies found
+✅ Every "#" internal import alias is used
 ```
 
-❌ **Circular dependencies found:**
+❌ **Dependency graph problems found:**
 
 ```
 📦 2 modules
 📁 2 local modules
 🚨 1 circular dependencies detected
 ■ ./examples/mod-b.ts ▶ ./examples/mod-d.ts ▶ ./examples/mod-b.ts
+🚨 1 unused "#" internal import alias in deno.json
+■ #legacy
 ```
 
 Under the hood it reads `deno info --json` for the complete module graph, walks
@@ -91,6 +98,24 @@ import { helper } from "./helper.ts"; // correct, same folder
 rule rewrites the specifier for you and keeps your quote style. When nothing
 matches, it reports the resolved path and leaves the fix to you — either add an
 entry for it, or move the shared code into a module that already has one.
+
+### `prefer-alias-import`
+
+The `./` counterpart. When a relative path crosses into another folder and that
+folder's file is already declared as a `#` entry, use the alias.
+
+```ts
+import { thing } from "./components/mod.ts"; // error, that is "#components"
+import { thing } from "#components"; // correct
+import { helper } from "./helper.ts"; // correct, same folder
+```
+
+Same-folder siblings are left alone, since that is the form every other rule
+recommends. One spelling per module keeps `deno.json` the single source of
+truth, and stops `enforce-layer-order` from being sidestepped by writing a path
+instead of an alias.
+
+**Automatically fixable.**
 
 ### `no-barrel-bypass`
 
@@ -158,23 +183,19 @@ dependencies is visible before reading a single statement. Anything that is
 neither a `#` alias nor a path counts as a package, which covers bare names,
 `jsr:`, `npm:`, `node:` and remote URLs alike.
 
-**Automatically fixable**, except when the fix would lose something: a comment
-between imports has no place in the rewritten block, and statements interleaved
-between imports would be erased by the rewrite. Both cases report without a fix.
+**Automatically fixable**, unless a comment or another statement sits between
+the imports. Those are reported without a fix, so nothing gets discarded.
 
-Names inside the braces are sorted too, ignoring case and any `type` modifier.
-A default or namespace binding sits outside the braces and stays where it is.
+Names inside the braces are sorted too, ignoring case and any `type` modifier. A
+default or namespace binding sits outside the braces and stays where it is.
 
 ```ts
-import plugin, { type ModuleEntry, baseName, normalizePath } from "#paths";
+import plugin, { baseName, type ModuleEntry, normalizePath } from "#paths";
 ```
 
-Sorting is by code point for specifiers and case insensitive for names. Locale
-collation quietly ignores punctuation, which would put `#utils` and
-`@std/assert` in an order that depends on the ICU version rather than on
-anything visible in the file. Names are the opposite case: they mix
-`PascalCase` types with `camelCase` functions, and a code point sort would
-clump them by case instead of alphabetically.
+Specifiers are ordered by code point, so punctuation such as `#` and `@` counts.
+Names are ordered case insensitively, so `PascalCase` types are not clumped
+ahead of `camelCase` functions.
 
 ### `enforce-layer-order`
 
