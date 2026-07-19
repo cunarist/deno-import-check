@@ -360,3 +360,52 @@ Deno.test("enforce-import-order reports without a fix when comments would be los
   assertEquals(found.length, 1);
   assertEquals(found[0].fix ?? [], []);
 });
+
+Deno.test("enforce-import-order sorts names inside the braces", () => {
+  const source = `import { normalizePath, baseName } from "#paths";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 1);
+  assertStringIncludes(found[0].message, `"baseName" must come before`);
+  assertEquals(
+    applyFixes(source, found),
+    `import { baseName, normalizePath } from "#paths";\n`,
+  );
+});
+
+Deno.test("enforce-import-order ignores case and type modifiers when sorting", () => {
+  const source = `import { zeta, Alpha, type Beta } from "#paths";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(
+    applyFixes(source, found),
+    `import { Alpha, type Beta, zeta } from "#paths";\n`,
+  );
+});
+
+Deno.test("enforce-import-order keeps a multi-line member list broken", () => {
+  const source = `import {\n  zeta,\n  alpha,\n} from "#paths";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(
+    applyFixes(source, found),
+    `import {\n  alpha,\n  zeta,\n} from "#paths";\n`,
+  );
+});
+
+Deno.test("enforce-import-order leaves default and namespace bindings in place", () => {
+  const source = `import plugin, { zebra, apple } from "#lint";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(
+    applyFixes(source, found),
+    `import plugin, { apple, zebra } from "#lint";\n`,
+  );
+});
+
+Deno.test("enforce-import-order accepts sorted names", () => {
+  const source = `import { alpha, type Beta, zeta } from "#paths";\n`;
+  const found = lint("src/mod.ts", source, "enforce-import-order");
+
+  assertEquals(found.length, 0);
+});

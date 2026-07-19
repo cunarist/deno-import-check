@@ -298,6 +298,40 @@ function compareSpecifiers(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/**
+ * Orders imported names case insensitively, unlike {@linkcode
+ * compareSpecifiers}. Specifiers are lowercase paths where only punctuation is
+ * ambiguous, but a member list mixes `PascalCase` types, `camelCase` functions
+ * and `SCREAMING_CASE` constants. Sorting those by code point would clump them
+ * by case, which hides the alphabetical order a reader is scanning for.
+ */
+function compareMembers(a: string, b: string): number {
+  const lowered = a.toLowerCase() < b.toLowerCase()
+    ? -1
+    : a.toLowerCase() > b.toLowerCase()
+    ? 1
+    : 0;
+  return lowered !== 0 ? lowered : compareSpecifiers(a, b);
+}
+
+/**
+ * The names inside the braces of an import, in source order. Default and
+ * namespace bindings sit outside the braces and are left alone.
+ */
+function namedSpecifiers(
+  node: Deno.lint.ImportDeclaration,
+): Deno.lint.ImportSpecifier[] {
+  return node.specifiers.filter((specifier) =>
+    specifier.type === "ImportSpecifier"
+  ) as Deno.lint.ImportSpecifier[];
+}
+
+/** The name a member is sorted by, which is the one written first. */
+function memberName(specifier: Deno.lint.ImportSpecifier): string {
+  const imported = specifier.imported;
+  return imported.type === "Identifier" ? imported.name : specifier.local.name;
+}
+
 const enforceImportOrder: Deno.lint.Rule = {
   create(ctx) {
     return {
@@ -306,6 +340,29 @@ const enforceImportOrder: Deno.lint.Rule = {
         const imports = body.filter((statement) =>
           statement.type === "ImportDeclaration"
         ) as Deno.lint.ImportDeclaration[];
+        if (imports.length === 0) {
+          return;
+        }
+
+        for (const node of imports) {
+          const members = namedSpecifiers(node);
+          for (let i = 1; i < members.length; i += 1) {
+            const name = memberName(members[i]);
+            const previousName = memberName(members[i - 1]);
+            if (compareMembers(name, previousName) >= 0) {
+              continue;
+            }
+            ctx.report({
+              node: members[i],
+              message: `"${name}" must come before "${previousName}".`,
+              hint:
+                "Imported names are sorted alphabetically, ignoring case and any \"type\" modifier.",
+              ...fixMemberOrder(ctx, members),
+            });
+            return;
+          }
+        }
+
         if (imports.length < 2) {
           return;
         }
@@ -365,6 +422,43 @@ const enforceImportOrder: Deno.lint.Rule = {
     };
   },
 };
+
+/**
+ * Rewrites the braces of one import in sorted order, preserving whether the
+ * list was written on one line or spread across several.
+ */
+function fixMemberOrder(
+  ctx: Deno.lint.RuleContext,
+  members: Deno.lint.ImportSpecifier[],
+): { fix?: (fixer: Deno.lint.Fixer) => Deno.lint.Fix } {
+  const text = ctx.sourceCode.text;
+  const start = members[0].range[0];
+  const end = members[members.length - 1].range[1];
+
+  const commented = ctx.sourceCode.getAllComments().some((comment) =>
+    comment.range[0] >= start && comment.range[1] <= end
+  );
+  if (commented) {
+    return {};
+  }
+
+  const sorted = [...members].sort((a, b) =>
+    compareMembers(memberName(a), memberName(b))
+  );
+  // Match the existing layout rather than reflowing it, so a list deno fmt
+  // already broke across lines stays broken.
+  const multiline = text.slice(start, end).includes("\n");
+  const indent = multiline
+    ? text.slice(text.lastIndexOf("\n", start) + 1, start)
+    : "";
+  const separator = multiline ? ",\n" + indent : ", ";
+  const replacement = sorted.map((member) => ctx.sourceCode.getText(member))
+    .join(separator);
+
+  return {
+    fix: (fixer) => fixer.replaceTextRange([start, end], replacement),
+  };
+}
 
 /**
  * Builds the whole-block rewrite for {@linkcode enforceImportOrder}, but only

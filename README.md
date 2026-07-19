@@ -162,9 +162,19 @@ neither a `#` alias nor a path counts as a package, which covers bare names,
 between imports has no place in the rewritten block, and statements interleaved
 between imports would be erased by the rewrite. Both cases report without a fix.
 
-Sorting is by code point, not locale. Locale collation quietly ignores
-punctuation, which puts `#utils` and `@std/assert` in an order that depends on
-the ICU version rather than on anything visible in the file.
+Names inside the braces are sorted too, ignoring case and any `type` modifier.
+A default or namespace binding sits outside the braces and stays where it is.
+
+```ts
+import plugin, { type ModuleEntry, baseName, normalizePath } from "#paths";
+```
+
+Sorting is by code point for specifiers and case insensitive for names. Locale
+collation quietly ignores punctuation, which would put `#utils` and
+`@std/assert` in an order that depends on the ICU version rather than on
+anything visible in the file. Names are the opposite case: they mix
+`PascalCase` types with `camelCase` functions, and a code point sort would
+clump them by case instead of alphabetically.
 
 ### `enforce-layer-order`
 
