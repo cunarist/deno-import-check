@@ -126,6 +126,12 @@ Bans specifiers starting with `/` or `file:`. A leading slash resolves against
 the file system root rather than the project root, a `file:` URL hard codes one
 machine's layout, and both slip past every path rule here.
 
+```ts
+import { utils } from "/src/utils/mod.ts"; // error, file system root
+import { utils } from "file:///home/me/src/utils/mod.ts"; // error, one machine
+import { utils } from "#utils"; // correct
+```
+
 ### `prefer-alias-import`
 
 The `./` counterpart. When a relative path crosses into another folder and that
